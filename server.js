@@ -1,4 +1,4 @@
-const Hapi = require('hapi');
+const Hapi = require('@hapi/hapi');
 const perlin = require('perlin-noise');
 const schema = require('validate');
 
@@ -36,8 +36,8 @@ const paramsSchema = schema({
 }, { typecast: true });
 
 // Create a server with a host and port
-const server = new Hapi.Server();
 
+const server = Hapi.server({ address: '0.0.0.0', port: process.env.PORT || 3500, load: { sampleInterval: 1000 } });
 
 /**
  * Validate params from the url parts and the querystring
@@ -72,15 +72,22 @@ const validateParams = params => {
   return errors;
 };
 
-server.connection({
-  host: '0.0.0.0',
-  port: process.env.PORT || 3500
-});
+
+server.route({ method: 'GET', path: '/status', handler: () => 'ok' });
 
 server.route({
   method: 'GET',
   path: '/',
-  handler: (request, reply) => reply('Try sending a request to /noise/10/1')
+  handler: () => 'Try sending a request to /noise/10/1'
+});
+
+server.route({
+  method: 'GET',
+  path: '/noise/{width}',
+  config: {
+    cors: true
+  },
+  handler: (request, handler) => handler.redirect(`/noise/${request.params.width}/1`)
 });
 
 server.route({
@@ -89,7 +96,7 @@ server.route({
   config: {
     cors: true
   },
-  handler: (request, reply) => {
+  handler: (request, h) => {
     // merge params and querystring
     const params = Object.assign(request.params, request.query);
 
@@ -98,24 +105,22 @@ server.route({
 
     if (errors && errors.length) {
       // error response code
-      reply(errors)
+      return h.response(errors)
         .code(400);
-    } else {
-      // extra options, faillback to defaults
-      const options = {
-        octaveCount: params.octaveCount || 4,
-        amplitude: params.amplitude || 0.1,
-        persistence: params.persistence || 0.2
-      };
-      // generate the noise
-      const noise = perlin.generatePerlinNoise(params.width, params.height, options);
-
-      if (params.jsonp) {
-        reply(`${params.jsonp}([${noise}]);`);
-      } else {
-        reply(noise);
-      }
     }
+      // extra options, faillback to defaults
+    const options = {
+      octaveCount: params.octaveCount || 4,
+      amplitude: params.amplitude || 0.1,
+      persistence: params.persistence || 0.2
+    };
+      // generate the noise
+    const noise = perlin.generatePerlinNoise(params.width, params.height, options);
+
+    if (params.jsonp) {
+      return `${params.jsonp}([${noise}]);`;
+    }
+    return noise;
   }
 });
 
